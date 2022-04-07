@@ -1,52 +1,97 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.EventSystems;
 
 public class Player : MonoBehaviour
 {
     private bool useCustomGravity = true;
-    private Vector3 gravityDirection;
-    private float jumpPower = 10;
+    private Vector3 gravityDirection = Vector3.down;
+    //cube must jump perpendicullarly to platform, not in opposite to gravity
+    private Vector3 jumpDirection = Vector3.up;
+    [SerializeField]
+    private float jumpPower = 20;
+    [SerializeField]
+    private float minBallisticPower = 5f;
+    [SerializeField]
+    private float maxBallisticPower = 20f;
+    private float currentBallisticPower;
+
     private Rigidbody rb;
     private Collider coll;
-    private bool ableToJump = true;
-    private bool ableToAim = true;
-    private bool inAiming = false;
+
+
+    private enum CUBE_STATE
+    {
+        INACTIVE,
+        CAN_JUMP,
+        CAN_AIM,
+        AIMING
+    }
+
+    CUBE_STATE cubeState = CUBE_STATE.CAN_JUMP;
 
     private RigidbodyConstraints defaultConstraints = RigidbodyConstraints.FreezePositionZ | RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationY;
 
+    private Material material;
+    [SerializeField]
+    Color32 aimingColor = new Color32(18, 214, 255, 255);
+    [SerializeField]
+    Color32 canAimColor = new Color32(18, 214, 255, 255);
+    [SerializeField]
+    Color32 canJumpColor = new Color32(255, 92, 194, 255);
+    [SerializeField]
+    Color32 defaultColor = new Color32(145, 145, 145, 255);
 
     [SerializeField]
     private GameObject vectorCircleSample;
     private GameObject currentVectorCircle;
+    [SerializeField]
+    private GameObject arrowSample;
+    private GameObject currentArrow;
+    private float arrowOffsetAxeZ = -1;
 
     private void Awake()
     {
+        Application.targetFrameRate = 60;
+
         rb = GetComponent<Rigidbody>();
         coll = GetComponent<Collider>();
-        gravityDirection = Vector3.up;
+        material = GetComponent<MeshRenderer>().material;
     }
 
-    public void Jump()
+
+    private void Update()
     {
-        if (ableToJump)
+        switch (cubeState)
         {
-            rb.AddForce(gravityDirection * jumpPower, ForceMode.Force);
-            ableToJump = false;
+            case CUBE_STATE.CAN_JUMP: material.color = canJumpColor;
+                break;
+            case CUBE_STATE.CAN_AIM:
+                material.color = canAimColor;
+                break;
+            case CUBE_STATE.AIMING:
+                material.color = aimingColor;
+                break;
+            case CUBE_STATE.INACTIVE:
+                material.color = defaultColor;
+                break;
         }
     }
 
     private void FixedUpdate()
     {
-       if(useCustomGravity) rb.AddForce(-gravityDirection * 9.8f, ForceMode.Acceleration);
+       if(useCustomGravity) rb.AddForce(gravityDirection * 9.8f, ForceMode.Acceleration);
     }
 
+    public void Jump()
+    {
+        rb.AddForce(jumpDirection * jumpPower, ForceMode.Force);
+    }
 
     private Vector3 startClickPos = Vector3.zero;
-    private Vector3 currentClickPos;
+    private Vector3 currentClickPos = Vector3.zero;
     private float startClickTime = 0;
-    private float currentClickTime;
+    private float currentClickTime = 0;
+    private Vector3 clampedDirection = Vector3.zero;
 
     private void OnMouseDown()
     {
@@ -61,6 +106,11 @@ public class Player : MonoBehaviour
         startClickTime = Time.time;
     }
 
+    
+    private float mouseDragThreshold = 5;
+    private float minTimeToDrag = .7f;
+    private float maxCircleMagnitude = 1.5f;
+
     private void OnMouseDrag()
     {
         if (Application.platform == RuntimePlatform.Android)
@@ -71,20 +121,37 @@ public class Player : MonoBehaviour
         {
             currentClickPos = Input.mousePosition;
         }
-        if (startClickPos != currentClickPos)
+        if ((startClickPos - currentClickPos).magnitude > mouseDragThreshold && startClickTime - currentClickTime >= minTimeToDrag)
         {
-            if (inAiming)
+            if (cubeState == CUBE_STATE.AIMING)
             {
+                Vector3 worldStartPos = Camera.main.ScreenToWorldPoint(new Vector3(startClickPos.x, startClickPos.y, -Camera.main.transform.position.z + arrowOffsetAxeZ));
+                Vector3 worldCurPos = Camera.main.ScreenToWorldPoint(new Vector3(currentClickPos.x, currentClickPos.y, -Camera.main.transform.position.z + arrowOffsetAxeZ));
 
+                Vector3 localStartPos = transform.InverseTransformVector(worldStartPos);
+                Vector3 localCurPos = transform.InverseTransformVector(worldCurPos);
+
+                clampedDirection = Vector3.ClampMagnitude(localCurPos - localStartPos, maxCircleMagnitude);
+
+                float cubeDeadzone = .5f;
+
+                float angle = Vector3.Angle(Vector3.up, clampedDirection);
+                if (clampedDirection.x > 0) angle = 360 - angle;
+                currentArrow.transform.localRotation = Quaternion.Euler(0, 0, angle - 180);
+                float scale = Mathf.Lerp(.25f, .6f, (clampedDirection.magnitude- cubeDeadzone) / (maxCircleMagnitude- cubeDeadzone));
+                currentBallisticPower = Mathf.Lerp(minBallisticPower, maxBallisticPower, (clampedDirection.magnitude - cubeDeadzone) / (maxCircleMagnitude - cubeDeadzone));
+                Debug.Log(currentBallisticPower);
+                currentArrow.transform.localScale = new Vector3(scale, scale, scale);
             }
-            else if (ableToAim)
+            else if (cubeState == CUBE_STATE.CAN_AIM || cubeState == CUBE_STATE.CAN_JUMP)
             {
-                ableToAim = false;
-                inAiming = true;
+                cubeState = CUBE_STATE.AIMING;
+
                 rb.velocity = Vector3.zero;
                 rb.constraints = RigidbodyConstraints.FreezeAll;
                 useCustomGravity = false;
-                drawingCircleCoroutine = StartCoroutine(DrawAimCircle());
+
+                drawingArrowCoroutine = StartCoroutine(DrawArrowCoroutine());
             }
             else
             {
@@ -95,71 +162,87 @@ public class Player : MonoBehaviour
 
     private void OnMouseUp()
     {
-        if (startClickPos != currentClickPos)
+        if ((startClickPos - currentClickPos).magnitude > mouseDragThreshold)
         {
-            if (inAiming)
+            if (cubeState == CUBE_STATE.AIMING)
             {
-                inAiming = false;
+                cubeState = CUBE_STATE.INACTIVE;
                 rb.constraints = defaultConstraints;
                 useCustomGravity = true;
-                rb.AddForce((startClickPos - currentClickPos).normalized * jumpPower, ForceMode.Force);
-                if (drawingCircleCoroutine != null) StopCoroutine(drawingCircleCoroutine);
-                Destroy(currentVectorCircle);
+                currentCollisionTime = 0;
+                rb.AddForce((startClickPos - currentClickPos).normalized * currentBallisticPower, ForceMode.Force);
+                if (drawingArrowCoroutine != null) StopCoroutine(drawingArrowCoroutine);
+               // Destroy(currentVectorCircle);
+                Destroy(currentArrow);
             }
         }
         else
         {
-            if (ableToJump)
+            if (cubeState == CUBE_STATE.CAN_JUMP)
             {
+                currentCollisionTime = 0;
                 Jump();
-                ableToJump = false;
+                cubeState = CUBE_STATE.CAN_AIM;
             }
         }
-
     }
-
+    
     //player cannot jump and aim again until he touches platform on which cube can stay
-    //maxInclineAngle is used for defining, can cube stay on the platform or not
-    //maxInclineAngle represents maximum angle between gravity direction and platform's normal vector
+    //maxInclineDotProduct is used for defining, can cube stay on the platform or not
+    //maxInclineDotProduct represents maximum angle between gravity direction and platform's normal vector
     //factically its a maximum dot product between gravity direction and normal vector of contact point cube_platform collision
-    //value scales from 0 to 1, where 1 - vectors shoud point in the same direction (0 degress diff), 0 - vectors may be perpendicular (90 degrees diff)
-    //default value is 0.9 (~15 degress diff)
+    //value scales from 0 to 1, where 1 - vectors must point in the same direction (0 degress diff), 0 - vectors may be perpendicular (90 degrees diff)
+    //default value is 0.7 (~35 degress diff)
 
-    private float maxInclineAngle = .7f;
-    private void OnCollisionEnter(Collision collision)
+    [SerializeField]
+    [Range(0, 1)]
+    private float maxInclineDotProduct = .7f;
+
+    private float collisionTimeThreshold = .25f;
+    private float currentCollisionTime = 0;
+
+    private void OnCollisionStay(Collision collision)
     {
-        foreach (ContactPoint contactPoint in collision.contacts)
+        currentCollisionTime += Time.deltaTime;
+        if ((cubeState == CUBE_STATE.INACTIVE || cubeState == CUBE_STATE.CAN_AIM) && (currentCollisionTime >= collisionTimeThreshold))
         {
-            if (Vector3.Dot(contactPoint.normal, gravityDirection) >= maxInclineAngle)
+            foreach (ContactPoint contactPoint in collision.contacts)
             {
-                ableToAim = true;
-                ableToJump = true;
+                if (Vector3.Dot(contactPoint.normal, -gravityDirection) >= maxInclineDotProduct)
+                {
+                    jumpDirection = contactPoint.normal;
+                    cubeState = CUBE_STATE.CAN_JUMP;
+                }
             }
         }
     }
 
-
-    private Coroutine drawingCircleCoroutine;
-
-    IEnumerator DrawAimCircle()
+    private void OnCollisionExit(Collision collision)
     {
-        ableToAim = false;
-        currentVectorCircle = Instantiate(vectorCircleSample, transform);
-        ParticleSystem circle = currentVectorCircle.GetComponent<ParticleSystem>();
+        if (cubeState == CUBE_STATE.CAN_JUMP) cubeState = CUBE_STATE.CAN_AIM;
+        currentCollisionTime = 0;
+    }
 
-        float appearingTimer = .25f;
+
+    private Coroutine drawingArrowCoroutine;
+
+    IEnumerator DrawArrowCoroutine()
+    {
+        currentArrow = Instantiate(arrowSample, transform);
+        SpriteRenderer arrowSprite = currentArrow.GetComponent<SpriteRenderer>();
+
+        float appearingTimer = .75f;
         float currentTimer = 0;
-        Color startColor = circle.startColor;
+        Color startColor = arrowSprite.color;
         Color targetColor = startColor;
         targetColor.a = 1;
 
         while (currentTimer < appearingTimer)
         {
             currentTimer += Time.deltaTime;
-            currentVectorCircle.GetComponent<ParticleSystem>().startColor = Color.Lerp(startColor, targetColor, currentTimer / appearingTimer);
-            currentVectorCircle.transform.localScale = Vector3.Lerp(Vector3.zero, Vector3.one, currentTimer / appearingTimer);
+            arrowSprite.color = Color.Lerp(startColor, targetColor, currentTimer / appearingTimer);
             yield return new WaitForEndOfFrame();
         }
-        drawingCircleCoroutine = null;
+        drawingArrowCoroutine = null;
     }
 }
