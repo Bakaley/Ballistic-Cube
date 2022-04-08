@@ -125,8 +125,8 @@ public class Player : MonoBehaviour
         {
             if (cubeState == CUBE_STATE.AIMING)
             {
-                Vector3 worldStartPos = Camera.main.ScreenToWorldPoint(new Vector3(startClickPos.x, startClickPos.y, -Camera.main.transform.position.z + arrowOffsetAxeZ));
-                Vector3 worldCurPos = Camera.main.ScreenToWorldPoint(new Vector3(currentClickPos.x, currentClickPos.y, -Camera.main.transform.position.z + arrowOffsetAxeZ));
+                Vector3 worldStartPos = Camera.main.ScreenToWorldPoint(new Vector3(startClickPos.x, startClickPos.y, -Camera.main.transform.position.z - arrowOffsetAxeZ));
+                Vector3 worldCurPos = Camera.main.ScreenToWorldPoint(new Vector3(currentClickPos.x, currentClickPos.y, -Camera.main.transform.position.z - arrowOffsetAxeZ));
 
                 Vector3 localStartPos = transform.InverseTransformVector(worldStartPos);
                 Vector3 localCurPos = transform.InverseTransformVector(worldCurPos);
@@ -140,7 +140,6 @@ public class Player : MonoBehaviour
                 currentArrow.transform.localRotation = Quaternion.Euler(0, 0, angle - 180);
                 float scale = Mathf.Lerp(.25f, .6f, (clampedDirection.magnitude- cubeDeadzone) / (maxCircleMagnitude- cubeDeadzone));
                 currentBallisticPower = Mathf.Lerp(minBallisticPower, maxBallisticPower, (clampedDirection.magnitude - cubeDeadzone) / (maxCircleMagnitude - cubeDeadzone));
-                Debug.Log(currentBallisticPower);
                 currentArrow.transform.localScale = new Vector3(scale, scale, scale);
             }
             else if (cubeState == CUBE_STATE.CAN_AIM || cubeState == CUBE_STATE.CAN_JUMP)
