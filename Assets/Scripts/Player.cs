@@ -223,6 +223,34 @@ public class Player : MonoBehaviour
         currentCollisionTime = 0;
     }
 
+    private void OnTriggerEnter(Collider other)
+    {
+        Orb orb;
+        if (other.TryGetComponent<Orb>(out orb)){
+            switch (orb.Type)
+            {
+                case Orb.ORB_TYPE.ADD_AIM:
+                    cubeState = CUBE_STATE.CAN_AIM;
+                    break;
+                case Orb.ORB_TYPE.GRAVITY_UP:
+                    gravityDirection = Vector3.up;
+                    break;
+                case Orb.ORB_TYPE.GRAVITY_DOWN:
+                    gravityDirection = Vector3.down;
+                    break;
+                case Orb.ORB_TYPE.GRAVITY_LEFT:
+                    gravityDirection = Vector3.left;
+                    break;
+                case Orb.ORB_TYPE.GRAVITY_RIGHT:
+                    gravityDirection = Vector3.right;
+                    break;
+                case Orb.ORB_TYPE.COLLECTIBLE:
+                    Destroy(other.gameObject);
+                    break;
+            }
+        }
+    }
+
 
     private Coroutine drawingArrowCoroutine;
 
